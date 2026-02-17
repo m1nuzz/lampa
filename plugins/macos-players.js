@@ -1,6 +1,12 @@
 (function () {
     'use strict';
 
+    if (window.macos_players_plugin) return;
+    window.macos_players_plugin = true;
+
+    console.log('[macOS Players] v1.2.0 loaded');
+
+    // Добавляем переводы
     Lampa.Lang.add({
         macos_players_title: {
             ru: 'Внешние плееры macOS',
@@ -18,147 +24,132 @@
             uk: 'URL-схема плеєра'
         },
         macos_players_scheme_descr: {
-            ru: 'Примеры: iina://weblink?url= или movist://open?url= или vlc://',
-            en: 'Examples: iina://weblink?url= or movist://open?url= or vlc://',
-            uk: 'Приклади: iina://weblink?url= або movist://open?url= або vlc://'
+            ru: 'Примеры: iina://weblink?url= или movist://open?url=',
+            en: 'Examples: iina://weblink?url= or movist://open?url=',
+            uk: 'Приклади: iina://weblink?url= або movist://open?url='
         }
     });
 
-    function startPlugin() {
-        if (window.macos_players_plugin) return;
-        window.macos_players_plugin = true;
+    // Проверка платформы
+    if (typeof Lampa.Platform === 'undefined' || !Lampa.Platform.macOS || !Lampa.Platform.macOS()) {
+        console.log('[macOS Players] Not macOS, disabled');
+        return;
+    }
 
-        console.log('[macOS Players] v1.1.1 starting...');
+    console.log('[macOS Players] macOS detected');
 
-        // Проверка платформы
-        if (typeof Lampa.Platform === 'undefined' || typeof Lampa.Platform.macOS !== 'function' || !Lampa.Platform.macOS()) {
-            console.log('[macOS Players] Not macOS, plugin disabled');
+    // Настройки
+    if (!window.lampa_settings) window.lampa_settings = {};
+    
+    if (!window.lampa_settings.macos_players) {
+        Lampa.SettingsApi.addComponent({
+            component: 'macos_players',
+            name: Lampa.Lang.translate('macos_players_title'),
+            icon: '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect x="5.5" y="5.5" width="37" height="33.1724" rx="1.252" fill="none" stroke="currentColor" stroke-width="3"/><line x1="27.8276" y1="5.5" x2="27.8276" y2="38.6724" stroke="currentColor" stroke-width="3"/><line x1="33.5898" y1="12.2251" x2="36.7378" y2="12.2251" stroke="currentColor" stroke-width="3"/><line x1="33.5898" y1="17.3047" x2="36.7378" y2="17.3047" stroke="currentColor" stroke-width="3"/><rect x="8.1292" y="38.6724" width="5.1034" height="3.8276" fill="none" stroke="currentColor" stroke-width="3"/><rect x="34.8687" y="38.6724" width="5.1034" height="3.8276" fill="none" stroke="currentColor" stroke-width="3"/></svg>'
+        });
+        window.lampa_settings.macos_players = true;
+        console.log('[macOS Players] Settings component registered');
+    }
+
+    Lampa.SettingsApi.addParam({
+        component: 'macos_players',
+        param: {
+            name: 'macos_player_enabled',
+            type: 'trigger',
+            default: false
+        },
+        field: {
+            name: Lampa.Lang.translate('macos_players_enable')
+        },
+        onChange: function(value) {
+            console.log('[macOS Players] Toggle:', value);
+            if (value) {
+                hookPlayer();
+            }
+        }
+    });
+
+    Lampa.SettingsApi.addParam({
+        component: 'macos_players',
+        param: {
+            name: 'macos_player_scheme',
+            type: 'input',
+            placeholder: 'iina://weblink?url=',
+            default: 'iina://weblink?url='
+        },
+        field: {
+            name: Lampa.Lang.translate('macos_players_scheme'),
+            description: Lampa.Lang.translate('macos_players_scheme_descr')
+        }
+    });
+
+    console.log('[macOS Players] Settings params added');
+
+    // Функция перехвата плеера
+    var player_hooked = false;
+    var originalPlay = null;
+
+    function hookPlayer() {
+        if (player_hooked) return;
+        if (!Lampa.Player || typeof Lampa.Player.play !== 'function') {
+            console.warn('[macOS Players] Player.play not found');
             return;
         }
 
-        console.log('[macOS Players] macOS detected');
+        originalPlay = Lampa.Player.play;
+        player_hooked = true;
 
-        // Создаём отдельную секцию настроек (важна проверка window.lampa_settings)
-        if (!window.lampa_settings) window.lampa_settings = {};
+        Lampa.Player.play = function(data) {
+            data = data || {};
+            
+            var enabled = Lampa.Storage.field('macos_player_enabled');
+            
+            if (enabled) {
+                console.log('[macOS Players] Launching external player...');
+                launchExternalPlayer(data);
+                return;
+            }
+            
+            return originalPlay.apply(this, arguments);
+        };
+
+        console.log('[macOS Players] Player hooked');
+    }
+
+    function launchExternalPlayer(data) {
+        var url = data.url;
+        if (!url) {
+            console.error('[macOS Players] No URL');
+            if (Lampa.Noty) Lampa.Noty.show('No video URL');
+            return;
+        }
+
+        url = url.replace('&preload', '&play');
+        var scheme = Lampa.Storage.field('macos_player_scheme') || 'iina://weblink?url=';
+        var encodedUrl = encodeURIComponent(url);
+        var externalUrl = '';
         
-        if (!window.lampa_settings.macos_players) {
-            Lampa.SettingsApi.addComponent({
-                component: 'macos_players',
-                name: Lampa.Lang.translate('macos_players_title'),
-                icon: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 18c-3.87-1.08-7-5.19-7-9V9l7-3.5L19 9v2c0 3.81-3.13 7.92-7 9zm-1-6h2v2h-2zm0-8h2v6h-2z" fill="currentColor"/></svg>'
-            });
-            window.lampa_settings.macos_players = true;
-            console.log('[macOS Players] Settings component added');
+        if (scheme.indexOf('${url}') > -1) {
+            externalUrl = scheme.replace('${url}', encodedUrl);
+        } else if (scheme.indexOf('${_url}') > -1) {
+            externalUrl = scheme.replace('${_url}', encodeURI(url));
+        } else if (scheme.indexOf('${furl}') > -1) {
+            externalUrl = scheme.replace('${furl}', url);
+        } else {
+            externalUrl = scheme + encodedUrl;
         }
 
-        // Переключатель включения/выключения
-        Lampa.SettingsApi.addParam({
-            component: 'macos_players',
-            param: {
-                name: 'macos_player_enabled',
-                type: 'trigger',
-                default: false
-            },
-            field: {
-                name: Lampa.Lang.translate('macos_players_enable')
-            },
-            onChange: function(value) {
-                console.log('[macOS Players] Enabled:', value);
-            }
-        });
-
-        // Поле для URL-схемы
-        Lampa.SettingsApi.addParam({
-            component: 'macos_players',
-            param: {
-                name: 'macos_player_scheme',
-                type: 'input',
-                placeholder: 'iina://weblink?url=',
-                default: 'iina://weblink?url='
-            },
-            field: {
-                name: Lampa.Lang.translate('macos_players_scheme'),
-                description: Lampa.Lang.translate('macos_players_scheme_descr')
-            }
-        });
-
-        console.log('[macOS Players] Settings params added');
-
-        // Перехватываем запуск плеера
-        if (Lampa.Player && typeof Lampa.Player.play === 'function') {
-            var originalPlay = Lampa.Player.play;
-
-            Lampa.Player.play = function(data) {
-                data = data || {};
-                
-                // Проверяем, включен ли внешний плеер
-                var enabled = Lampa.Storage.field('macos_player_enabled');
-                
-                if (enabled) {
-                    console.log('[macOS Players] External player enabled, launching...');
-                    launchExternalPlayer(data);
-                    return;
-                }
-                
-                // Если выключен - используем стандартный плеер
-                return originalPlay.apply(this, arguments);
-            };
-
-            console.log('[macOS Players] Player.play hooked');
+        if (externalUrl) {
+            console.log('[macOS Players] Opening:', externalUrl);
+            window.location.assign(externalUrl);
+            if (Lampa.Noty) Lampa.Noty.show('Opening external player');
         }
-
-        function launchExternalPlayer(data) {
-            var url = data.url;
-            if (!url) {
-                console.error('[macOS Players] No URL provided');
-                if (Lampa.Noty) Lampa.Noty.show('No video URL');
-                return;
-            }
-
-            url = url.replace('&preload', '&play');
-            
-            var scheme = Lampa.Storage.field('macos_player_scheme') || 'iina://weblink?url=';
-            if (!scheme) {
-                if (Lampa.Noty) Lampa.Noty.show('Configure player URL scheme in settings');
-                return;
-            }
-            
-            var encodedUrl = encodeURIComponent(url);
-            var externalUrl = '';
-            
-            // Обработка плейсхолдеров
-            if (scheme.indexOf('${url}') > -1) {
-                externalUrl = scheme.replace('${url}', encodedUrl);
-            } else if (scheme.indexOf('${_url}') > -1) {
-                externalUrl = scheme.replace('${_url}', encodeURI(url));
-            } else if (scheme.indexOf('${furl}') > -1) {
-                externalUrl = scheme.replace('${furl}', url);
-            } else {
-                // Просто добавляем закодированный URL в конец схемы
-                externalUrl = scheme + encodedUrl;
-            }
-
-            if (externalUrl) {
-                console.log('[macOS Players] Opening:', externalUrl);
-                try {
-                    window.location.assign(externalUrl);
-                    if (Lampa.Noty) Lampa.Noty.show('Opening external player');
-                } catch (e) {
-                    console.error('[macOS Players] Failed to open:', e);
-                    if (Lampa.Noty) Lampa.Noty.show('Failed to launch player');
-                }
-            }
-        }
-
-        console.log('[macOS Players] Initialized successfully');
     }
 
-    // Запуск плагина
-    if (window.appready) {
-        startPlugin();
-    } else if (Lampa.Listener && Lampa.Listener.follow) {
-        Lampa.Listener.follow('app', function (e) {
-            if (e.type === 'ready') startPlugin();
-        });
+    // Если уже включено - хукаем сразу
+    if (Lampa.Storage.field('macos_player_enabled')) {
+        hookPlayer();
     }
+
+    console.log('[macOS Players] Initialized');
 })();
