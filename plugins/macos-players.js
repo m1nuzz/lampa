@@ -28,7 +28,7 @@
         if (window.macos_players_plugin) return;
         window.macos_players_plugin = true;
 
-        console.log('[macOS Players] v1.1.0 loaded');
+        console.log('[macOS Players] v1.1.1 starting...');
 
         // Проверка платформы
         if (typeof Lampa.Platform === 'undefined' || typeof Lampa.Platform.macOS !== 'function' || !Lampa.Platform.macOS()) {
@@ -38,12 +38,18 @@
 
         console.log('[macOS Players] macOS detected');
 
-        // Создаём отдельную секцию настроек
-        Lampa.SettingsApi.addComponent({
-            component: 'macos_players',
-            name: Lampa.Lang.translate('macos_players_title'),
-            icon: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 18c-3.87-1.08-7-5.19-7-9V9l7-3.5L19 9v2c0 3.81-3.13 7.92-7 9zm-1-6h2v2h-2zm0-8h2v6h-2z" fill="currentColor"/></svg>'
-        });
+        // Создаём отдельную секцию настроек (важна проверка window.lampa_settings)
+        if (!window.lampa_settings) window.lampa_settings = {};
+        
+        if (!window.lampa_settings.macos_players) {
+            Lampa.SettingsApi.addComponent({
+                component: 'macos_players',
+                name: Lampa.Lang.translate('macos_players_title'),
+                icon: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5zm0 18c-3.87-1.08-7-5.19-7-9V9l7-3.5L19 9v2c0 3.81-3.13 7.92-7 9zm-1-6h2v2h-2zm0-8h2v6h-2z" fill="currentColor"/></svg>'
+            });
+            window.lampa_settings.macos_players = true;
+            console.log('[macOS Players] Settings component added');
+        }
 
         // Переключатель включения/выключения
         Lampa.SettingsApi.addParam({
@@ -75,6 +81,8 @@
                 description: Lampa.Lang.translate('macos_players_scheme_descr')
             }
         });
+
+        console.log('[macOS Players] Settings params added');
 
         // Перехватываем запуск плеера
         if (Lampa.Player && typeof Lampa.Player.play === 'function') {
