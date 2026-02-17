@@ -9,6 +9,8 @@
     var TAG = '[macOS Players]';
     var PARAM = 'macos_ext_player';
 
+    console.log(TAG, 'v2.1.0 loading...');
+
     // ========================
     //   PLAYER CONFIGURATIONS
     // ========================
@@ -28,14 +30,21 @@
     };
 
     // ========================
-    //   SETTINGS REGISTRATION
+    //   SETTINGS - SEPARATE COMPONENT
     // ========================
     function registerSettings(){
         var values = { none: 'Disabled' };
         for (var k in PLAYERS) values[k] = PLAYERS[k].name;
 
+        // Create SEPARATE component (not adding to 'player')
+        Lampa.SettingsApi.addComponent({
+            component: 'external_player',
+            name: 'External Player',
+            icon: '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/></svg>'
+        });
+
         Lampa.SettingsApi.addParam({
-            component: 'player',  // Add to existing 'player' section - safer
+            component: 'external_player',  // Our own component
             param: {
                 name: PARAM,
                 type: 'select',
@@ -43,28 +52,26 @@
                 default: 'none'
             },
             field: {
-                name: 'External Player (macOS)',
-                description: 'Redirect playback to external player'
+                name: 'Player Selection',
+                description: 'Choose external player for macOS'
             }
         });
 
         console.log(TAG, 'settings registered');
     }
 
-    // Register settings immediately
-    try {
-        registerSettings();
-    } catch(e) {
-        console.error(TAG, 'settings error:', e);
-        // Fallback - on ready event
-        if (Lampa.Listener) {
-            Lampa.Listener.follow('app', function(ev){
-                if (ev.type === 'ready') {
-                    try { registerSettings(); } catch(e2) {
-                        console.error(TAG, 'settings retry error:', e2);
-                    }
-                }
-            });
+    // Wait for Settings to be ready
+    function initSettings(){
+        if (!Lampa.SettingsApi || !Lampa.SettingsApi.addComponent) {
+            console.warn(TAG, 'SettingsApi not ready, retrying...');
+            setTimeout(initSettings, 1000);
+            return;
+        }
+
+        try {
+            registerSettings();
+        } catch(e) {
+            console.error(TAG, 'settings error:', e);
         }
     }
 
@@ -105,7 +112,7 @@
     }
 
     // ========================
-    //   STRATEGY: PLAYER EVENT LISTENER (SAFEST)
+    //   PLAYER EVENT LISTENER
     // ========================
     function listenPlayerEvents(){
         var intercepted = false;
@@ -113,16 +120,13 @@
         Lampa.Listener.follow('player', function(e){
             if (intercepted) return;
 
-            // Catch the moment when URL is known
             if (e.type === 'start' || e.type === 'play') {
                 var sel = Lampa.Storage.field(PARAM);
                 if (!sel || sel === 'none') return;
 
-                // Try to get URL from <video> element
                 var video = document.querySelector('video');
                 var url = video ? (video.src || video.currentSrc) : '';
 
-                // Or from event data (depends on Lampa version)
                 if (!url && e.data) url = extractUrl(e.data);
                 if (!url && e.object && e.object.url) url = e.object.url;
 
@@ -141,49 +145,12 @@
     }
 
     // ========================
-    //   STRATEGY: SAFE PLAYER.PLAY HOOK (OPTIONAL)
-    // ========================
-    function hookPlayerPlay(){
-        if (!Lampa.Player || typeof Lampa.Player.play !== 'function') {
-            console.warn(TAG, 'Player.play not found');
-            return;
-        }
-
-        var _orig = Lampa.Player.play;
-
-        Lampa.Player.play = function(data){
-            var sel = Lampa.Storage.field(PARAM);
-
-            if (sel && sel !== 'none') {
-                var videoUrl = extractUrl(data);
-
-                if (videoUrl && openScheme(videoUrl)) {
-                    // IMPORTANT: use backward() to prevent player UI initialization
-                    setTimeout(function(){
-                        try { Lampa.Activity.backward(); } catch(e){}
-                    }, 50);
-                    return;
-                }
-            }
-
-            // Context MUST be Lampa.Player, otherwise internal this === window
-            return _orig.apply(Lampa.Player, arguments);
-        };
-
-        console.log(TAG, 'Player.play hooked');
-    }
-
-    // ========================
     //   INITIALIZATION
     // ========================
     function initPlugin(){
-        // Use event listener strategy (safest - doesn't break player chain)
+        initSettings();
         listenPlayerEvents();
-
-        // Optionally add play() hook for instant redirect (comment out if causes issues)
-        // hookPlayerPlay();
-
-        console.log(TAG, 'v2.0.0 initialized');
+        console.log(TAG, 'v2.1.0 initialized');
     }
 
     // Wait for app ready
@@ -193,10 +160,10 @@
         });
     }
 
-    // Fallback - if 'ready' already fired
+    // Fallback
     setTimeout(function(){
         try { initPlugin(); } catch(e){ console.error(TAG, e); }
-    }, 5000);
+    }, 3000);
 
     console.log(TAG, 'script loaded');
 })();
