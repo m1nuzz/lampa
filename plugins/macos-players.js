@@ -1,49 +1,61 @@
 (function () {
     'use strict';
 
-    // Проверяем, что Lampa готова
-    if (typeof Lampa === 'undefined') {
-        console.error('[macOS Players] Lampa not found');
-        return;
-    }
+    console.log('[macOS Players] Plugin script loaded');
 
-    // Добавляем переводы безопасно
-    if (Lampa.Lang && Lampa.Lang.add) {
-        Lampa.Lang.add({
-            settings_player_custom_scheme: {
-                ru: 'URL-схема кастомного плеера',
-                en: 'Custom player URL scheme',
-                uk: 'URL-схема кастомного плеєра'
-            },
-            settings_player_custom_scheme_descr: {
-                ru: 'Введите URL-схему. Примеры: iina://weblink?url= или vlc://',
-                en: 'Enter URL scheme. Examples: iina://weblink?url= or vlc://',
-                uk: 'Введіть URL-схему. Приклади: iina://weblink?url= або vlc://'
-            }
-        });
-    }
+    // Функция инициализации плагина
+    function initPlugin() {
+        // Проверяем, что Lampa готова
+        if (typeof Lampa === 'undefined') {
+            console.log('[macOS Players] Lampa not ready, waiting...');
+            return false;
+        }
 
-    function startPlugin() {
-        if (window.macos_players_plugin) return;
+        if (!Lampa.Platform || !Lampa.Storage || !Lampa.Player || !Lampa.Lang) {
+            console.log('[macOS Players] Lampa components not ready, waiting...');
+            return false;
+        }
+
+        if (window.macos_players_plugin) {
+            console.log('[macOS Players] Already initialized');
+            return true;
+        }
+
         window.macos_players_plugin = true;
+        console.log('[macOS Players] v1.0.4 initializing...');
 
-        console.log('[macOS Players] v1.0.3 starting...');
-
-        // Проверяем необходимые объекты
-        if (!Lampa.Platform || !Lampa.Storage || !Lampa.Player) {
-            console.error('[macOS Players] Required Lampa objects not found');
-            return;
+        // Добавляем переводы
+        try {
+            Lampa.Lang.add({
+                settings_player_custom_scheme: {
+                    ru: 'URL-схема кастомного плеера',
+                    en: 'Custom player URL scheme',
+                    uk: 'URL-схема кастомного плеєра'
+                },
+                settings_player_custom_scheme_descr: {
+                    ru: 'Введите URL-схему. Примеры: iina://weblink?url= или vlc://',
+                    en: 'Enter URL scheme. Examples: iina://weblink?url= or vlc://',
+                    uk: 'Введіть URL-схему. Приклади: iina://weblink?url= або vlc://'
+                }
+            });
+        } catch (e) {
+            console.error('[macOS Players] Lang add error:', e);
         }
 
         // Проверка платформы
-        if (typeof Lampa.Platform.macOS !== 'function' || !Lampa.Platform.macOS()) {
-            console.log('[macOS Players] Not macOS, skipping');
-            return;
+        try {
+            if (typeof Lampa.Platform.macOS !== 'function' || !Lampa.Platform.macOS()) {
+                console.log('[macOS Players] Not macOS, plugin disabled');
+                return true;
+            }
+        } catch (e) {
+            console.error('[macOS Players] Platform check error:', e);
+            return false;
         }
 
         console.log('[macOS Players] macOS detected');
 
-        // Добавляем настройки с проверкой
+        // Добавляем настройки
         if (Lampa.SettingsApi && Lampa.SettingsApi.addParam) {
             try {
                 Lampa.SettingsApi.addParam({
@@ -65,48 +77,38 @@
             }
         }
 
-        // Перехватываем запуск плеера с проверкой
-        if (!Lampa.Player.play || typeof Lampa.Player.play !== 'function') {
-            console.error('[macOS Players] Player.play not found');
-            return;
-        }
+        // Перехватываем запуск плеера
+        if (Lampa.Player && typeof Lampa.Player.play === 'function') {
+            var originalPlay = Lampa.Player.play;
 
-        var originalPlay = Lampa.Player.play;
-
-        Lampa.Player.play = function(data) {
-            try {
-                data = data || {};
-                
-                // Определяем тип плеера
-                var playerType = 'player';
-                if (data.torrent_hash) playerType = 'player_torrent';
-                else if (data.iptv) playerType = 'player_iptv';
-                
-                var selectedPlayer = '';
+            Lampa.Player.play = function(data) {
                 try {
-                    selectedPlayer = Lampa.Storage.field(playerType) || 'inner';
+                    data = data || {};
+                    
+                    var playerType = 'player';
+                    if (data.torrent_hash) playerType = 'player_torrent';
+                    else if (data.iptv) playerType = 'player_iptv';
+                    
+                    var selectedPlayer = Lampa.Storage.field(playerType) || 'inner';
+                    
+                    console.log('[macOS Players] Player:', selectedPlayer);
+                    
+                    if (selectedPlayer === 'movist' || selectedPlayer === 'custom') {
+                        handleExternalPlayer(data, selectedPlayer);
+                        return;
+                    }
+                    
+                    return originalPlay.apply(this, arguments);
                 } catch (e) {
-                    console.error('[macOS Players] Storage error:', e);
-                    selectedPlayer = 'inner';
+                    console.error('[macOS Players] Play error:', e);
+                    return originalPlay.apply(this, arguments);
                 }
-                
-                console.log('[macOS Players] Player:', selectedPlayer);
-                
-                // Проверяем новые плееры
-                if (selectedPlayer === 'movist' || selectedPlayer === 'custom') {
-                    handleExternalPlayer(data, selectedPlayer);
-                    return;
-                }
-                
-                // Для остальных - стандартное поведение
-                return originalPlay.apply(this, arguments);
-            } catch (e) {
-                console.error('[macOS Players] Play error:', e);
-                return originalPlay.apply(this, arguments);
-            }
-        };
+            };
 
-        console.log('[macOS Players] Player hooked');
+            console.log('[macOS Players] Player hooked');
+        } else {
+            console.error('[macOS Players] Player.play not found');
+        }
 
         function handleExternalPlayer(data, playerType) {
             try {
@@ -115,9 +117,7 @@
                 var url = data.url;
                 if (!url) {
                     console.error('[macOS Players] No URL');
-                    if (Lampa.Noty && Lampa.Noty.show) {
-                        Lampa.Noty.show('No video URL');
-                    }
+                    if (Lampa.Noty) Lampa.Noty.show('No video URL');
                     return;
                 }
 
@@ -128,21 +128,13 @@
                 if (playerType === 'movist') {
                     externalUrl = 'movist://open?url=' + encodedUrl;
                 } else if (playerType === 'custom') {
-                    var scheme = '';
-                    try {
-                        scheme = Lampa.Storage.field('custom_player_scheme') || '';
-                    } catch (e) {
-                        console.error('[macOS Players] Storage error:', e);
-                    }
+                    var scheme = Lampa.Storage.field('custom_player_scheme') || '';
                     
                     if (!scheme) {
-                        if (Lampa.Noty && Lampa.Noty.show) {
-                            Lampa.Noty.show('Configure custom scheme in settings');
-                        }
+                        if (Lampa.Noty) Lampa.Noty.show('Configure custom scheme in settings');
                         return;
                     }
                     
-                    // Обработка плейсхолдеров
                     if (scheme.indexOf('${url}') > -1) {
                         externalUrl = scheme.replace('${url}', encodedUrl);
                     } else if (scheme.indexOf('${_url}') > -1) {
@@ -156,34 +148,32 @@
 
                 if (externalUrl) {
                     console.log('[macOS Players] Opening:', externalUrl);
-                    try {
-                        window.location.assign(externalUrl);
-                        if (Lampa.Noty && Lampa.Noty.show) {
-                            Lampa.Noty.show('Opening ' + playerType);
-                        }
-                    } catch (e) {
-                        console.error('[macOS Players] Launch error:', e);
-                        if (Lampa.Noty && Lampa.Noty.show) {
-                            Lampa.Noty.show('Failed to launch');
-                        }
-                    }
+                    window.location.assign(externalUrl);
+                    if (Lampa.Noty) Lampa.Noty.show('Opening ' + playerType);
                 }
             } catch (e) {
                 console.error('[macOS Players] External player error:', e);
             }
         }
 
-        console.log('[macOS Players] Initialized');
+        console.log('[macOS Players] Initialized successfully');
+        return true;
     }
 
-    // Запуск плагина
-    if (window.appready) {
-        startPlugin();
-    } else if (Lampa.Listener && Lampa.Listener.follow) {
-        Lampa.Listener.follow('app', function (e) {
-            if (e && e.type === 'ready') startPlugin();
-        });
-    } else {
-        console.error('[macOS Players] Cannot initialize - Lampa.Listener not found');
-    }
+    // Пытаемся инициализировать с задержкой
+    var attempts = 0;
+    var maxAttempts = 50; // 50 попыток * 200мс = 10 секунд
+    
+    var initTimer = setInterval(function() {
+        attempts++;
+        
+        if (initPlugin()) {
+            console.log('[macOS Players] Initialization completed after', attempts, 'attempts');
+            clearInterval(initTimer);
+        } else if (attempts >= maxAttempts) {
+            console.error('[macOS Players] Initialization timeout after', attempts, 'attempts');
+            clearInterval(initTimer);
+        }
+    }, 200);
+
 })();
