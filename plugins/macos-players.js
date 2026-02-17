@@ -1,211 +1,238 @@
-(function() {
+(function () {
     'use strict';
 
-    // Информация о плагине
     var manifest = {
         id: 'macos-players',
         name: 'macOS Players Extension',
-        description: 'Adds support for Movist Pro and Custom Player on macOS',
-        version: '1.0.0',
-        author: '@m1nuzz'
+        description: 'Adds Movist Pro and Custom Player support for macOS',
+        version: '1.0.1'
     };
 
-    // Языковые переводы
-    var translations = {
-        ru: {
-            settings_player_custom_scheme: 'URL-схема кастомного плеера',
-            settings_player_custom_scheme_descr: 'Укажите URL-схему вашего плеера. Примеры: someplayer://open?url= или mycustomplayer://play?file=',
-            settings_player_custom_placeholder: 'Например: someplayer://open?url='
-        },
-        en: {
-            settings_player_custom_scheme: 'Custom player URL scheme',
-            settings_player_custom_scheme_descr: 'Specify your player URL scheme. Examples: someplayer://open?url= or mycustomplayer://play?file=',
-            settings_player_custom_placeholder: 'For example: someplayer://open?url='
-        },
-        uk: {
-            settings_player_custom_scheme: 'URL-схема кастомного плеєра',
-            settings_player_custom_scheme_descr: 'Вкажіть URL-схему вашого плеєра. Приклади: someplayer://open?url= або mycustomplayer://play?file=',
-            settings_player_custom_placeholder: 'Наприклад: someplayer://open?url='
-        }
-    };
-
-    // Инициализация плагина
-    function init() {
-        console.log('[macOS Players Plugin] Initializing...');
-        
-        // Добавляем переводы
-        addTranslations();
-        
-        // Модифицируем настройки плеера
-        modifyPlayerSettings();
-        
-        // Перехватываем запуск плеера
-        hookPlayerLaunch();
-        
-        console.log('[macOS Players Plugin] Initialized successfully');
-    }
-
-    // Добавление переводов
+    // Добавляем переводы
     function addTranslations() {
-        var currentLang = Lampa.Storage.get('language', 'ru');
-        
-        if (translations[currentLang]) {
-            for (var key in translations[currentLang]) {
-                if (!Lampa.Lang[key]) {
-                    Lampa.Lang[key] = translations[currentLang][key];
-                }
+        Lampa.Lang.add({
+            settings_player_custom_scheme: {
+                ru: 'URL-схема кастомного плеера',
+                en: 'Custom player URL scheme',
+                uk: 'URL-схема кастомного плеєра'
+            },
+            settings_player_custom_scheme_descr: {
+                ru: 'Укажите URL-схему вашего плеера. Примеры: someplayer://open?url= или myplayer://play?file=',
+                en: 'Specify your player URL scheme. Examples: someplayer://open?url= or myplayer://play?file=',
+                uk: 'Вкажіть URL-схему вашого плеєра. Приклади: someplayer://open?url= або myplayer://play?file='
             }
-        }
+        });
     }
 
-    // Модификация настроек плеера
-    function modifyPlayerSettings() {
+    function startPlugin() {
+        if (window.macos_players_plugin) return;
+        window.macos_players_plugin = true;
+
+        console.log('[macOS Players Plugin] Starting...');
+        
+        addTranslations();
+
         // Проверяем, что мы на macOS
         if (!Lampa.Platform.macOS()) {
-            console.log('[macOS Players Plugin] Not macOS, skipping...');
+            console.log('[macOS Players Plugin] Not macOS, plugin disabled');
             return;
         }
 
-        // Добавляем новые опции в список плееров
-        var playerTypes = ['player', 'player_iptv', 'player_torrent'];
-        
-        playerTypes.forEach(function(playerType) {
-            // Получаем текущие настройки
-            var currentSettings = Lampa.Storage.get(playerType, 'inner');
-            
-            // Hook для добавления опций в select
+        console.log('[macOS Players Plugin] macOS detected, initializing...');
+
+        // Получаем текущие значения селектора плееров
+        var playerSelectors = {
+            'inner': Lampa.Lang.translate('settings_param_player_inner'),
+            'iina': 'IINA',
+            'infuse': 'Infuse',
+            'mpv': 'MPV',
+            'nplayer': 'nPlayer',
+            'movist': 'Movist Pro',
+            'custom': 'Custom Player'
+        };
+
+        // Добавляем параметр для основного плеера
+        try {
             Lampa.SettingsApi.addParam({
                 component: 'player',
                 param: {
-                    name: playerType,
+                    name: 'player',
                     type: 'select',
-                    values: {
-                        'inner': Lampa.Lang.translate('settings_param_player_inner'),
-                        'iina': 'IINA',
-                        'infuse': 'Infuse',
-                        'mpv': 'MPV',
-                        'nplayer': 'nPlayer',
-                        'movist': 'Movist Pro',
-                        'custom': 'Custom Player'
-                    },
+                    values: playerSelectors,
                     default: 'inner'
+                },
+                field: {
+                    name: Lampa.Lang.translate('settings_player_type')
+                },
+                onChange: function(value) {
+                    console.log('[macOS Players Plugin] Player changed to:', value);
                 }
             });
-        });
+        } catch (e) {
+            console.warn('[macOS Players Plugin] Failed to add player selector:', e);
+        }
 
-        // Добавляем поле для ввода кастомной схемы
+        // Добавляем параметр для IPTV плеера
+        try {
+            Lampa.SettingsApi.addParam({
+                component: 'player',
+                param: {
+                    name: 'player_iptv',
+                    type: 'select',
+                    values: playerSelectors,
+                    default: 'inner'
+                },
+                field: {
+                    name: Lampa.Lang.translate('settings_player_iptv_type')
+                }
+            });
+        } catch (e) {
+            console.warn('[macOS Players Plugin] Failed to add IPTV player selector:', e);
+        }
+
+        // Добавляем параметр для торрент плеера
+        try {
+            Lampa.SettingsApi.addParam({
+                component: 'player',
+                param: {
+                    name: 'player_torrent',
+                    type: 'select',
+                    values: playerSelectors,
+                    default: 'inner'
+                },
+                field: {
+                    name: Lampa.Lang.translate('settings_player_torrent_type')
+                }
+            });
+        } catch (e) {
+            console.warn('[macOS Players Plugin] Failed to add torrent player selector:', e);
+        }
+
+        // Добавляем поле для кастомной схемы
         Lampa.SettingsApi.addParam({
             component: 'player',
             param: {
                 name: 'custom_player_scheme',
                 type: 'input',
-                placeholder: Lampa.Lang.translate('settings_player_custom_placeholder') || 'someplayer://open?url=',
+                placeholder: 'someplayer://open?url=',
                 default: ''
             },
             field: {
-                name: Lampa.Lang.translate('settings_player_custom_scheme') || 'Custom player URL scheme',
-                description: Lampa.Lang.translate('settings_player_custom_scheme_descr') || 'Specify your player URL scheme'
+                name: Lampa.Lang.translate('settings_player_custom_scheme'),
+                description: Lampa.Lang.translate('settings_player_custom_scheme_descr')
             },
             onRender: function(item) {
-                // Показывать только если выбран Custom Player
-                var playerType = Lampa.Storage.field('player');
-                item.toggle(playerType === 'custom');
+                // Показываем только если выбран Custom Player
+                var update = function() {
+                    var player = Lampa.Storage.field('player');
+                    var player_iptv = Lampa.Storage.field('player_iptv');
+                    var player_torrent = Lampa.Storage.field('player_torrent');
+                    var show = player === 'custom' || player_iptv === 'custom' || player_torrent === 'custom';
+                    item.toggle(show);
+                };
+                update();
+                Lampa.Storage.listener.follow('change', update);
             }
         });
 
-        console.log('[macOS Players Plugin] Settings modified');
-    }
-
-    // Перехват запуска плеера
-    function hookPlayerLaunch() {
-        if (!Lampa.Platform.macOS()) return;
-
-        // Сохраняем оригинальную функцию play
+        // Перехватываем запуск плеера
         var originalPlay = Lampa.Player.play;
-        
-        // Переопределяем функцию play
-        Lampa.Player.play = function(data) {
-            var playerType = 'player';
+        if (originalPlay) {
+            Lampa.Player.play = function(data) {
+                data = data || {};
+                
+                // Определяем тип плеера
+                var playerType = 'player';
+                if (data.torrent_hash) playerType = 'player_torrent';
+                else if (data.iptv) playerType = 'player_iptv';
+                
+                var selectedPlayer = Lampa.Storage.field(playerType);
+                
+                console.log('[macOS Players Plugin] Play requested:', selectedPlayer, data);
+                
+                // Обрабатываем новые плееры
+                if (selectedPlayer === 'movist' || selectedPlayer === 'custom') {
+                    handleExternalPlayer(data, selectedPlayer);
+                    return;
+                }
+                
+                // Вызываем оригинальную функцию для остальных случаев
+                return originalPlay.apply(this, arguments);
+            };
+            console.log('[macOS Players Plugin] Player.play hooked successfully');
+        } else {
+            console.warn('[macOS Players Plugin] Lampa.Player.play not found');
+        }
+
+        function handleExternalPlayer(data, playerType) {
+            console.log('[macOS Players Plugin] Launching external player:', playerType);
             
-            // Определяем тип плеера
-            if (data.torrent_hash) playerType = 'player_torrent';
-            else if (data.iptv) playerType = 'player_iptv';
-            
-            var selectedPlayer = Lampa.Storage.field(playerType);
-            
-            // Обрабатываем новые плееры
-            if (selectedPlayer === 'movist' || selectedPlayer === 'custom') {
-                handleExternalPlayer(data, selectedPlayer);
+            var url = data.url;
+            if (!url) {
+                console.error('[macOS Players Plugin] No URL provided');
+                Lampa.Noty.show('No video URL available');
                 return;
             }
+
+            // Убираем параметр preload
+            url = url.replace('&preload', '&play');
             
-            // Вызываем оригинальную функцию для остальных случаев
-            return originalPlay.apply(this, arguments);
-        };
+            var encodedUrl = encodeURIComponent(url);
+            var externalUrl = '';
 
-        console.log('[macOS Players Plugin] Player launch hooked');
-    }
-
-    // Обработка запуска внешнего плеера
-    function handleExternalPlayer(data, playerType) {
-        console.log('[macOS Players Plugin] Launching', playerType);
-        
-        var url = data.url.replace('&preload', '&play');
-        var encodedUrl = encodeURIComponent(url);
-        var externalUrl = '';
-
-        if (playerType === 'movist') {
-            // Movist Pro поддерживает несколько схем
-            externalUrl = 'movist://open?url=' + encodedUrl;
-        } else if (playerType === 'custom') {
-            // Используем кастомную схему
-            var customScheme = Lampa.Storage.field('custom_player_scheme') || 'custom://';
-            
-            // Проверяем формат схемы
-            if (customScheme.indexOf('${url}') !== -1) {
-                externalUrl = customScheme.replace('${url}', encodedUrl);
-            } else if (customScheme.indexOf('${_url}') !== -1) {
-                externalUrl = customScheme.replace('${_url}', encodeURI(url));
-            } else if (customScheme.indexOf('${furl}') !== -1) {
-                externalUrl = customScheme.replace('${furl}', url);
-            } else {
-                // Просто добавляем URL в конец
-                externalUrl = customScheme + encodedUrl;
+            if (playerType === 'movist') {
+                // Movist Pro схема
+                externalUrl = 'movist://open?url=' + encodedUrl;
+            } else if (playerType === 'custom') {
+                // Кастомная схема
+                var customScheme = Lampa.Storage.field('custom_player_scheme') || '';
+                
+                if (!customScheme) {
+                    console.error('[macOS Players Plugin] Custom scheme not configured');
+                    Lampa.Noty.show('Please configure custom player URL scheme in settings');
+                    return;
+                }
+                
+                // Обрабатываем плейсхолдеры
+                if (customScheme.indexOf('${url}') !== -1) {
+                    externalUrl = customScheme.replace('${url}', encodedUrl);
+                } else if (customScheme.indexOf('${_url}') !== -1) {
+                    externalUrl = customScheme.replace('${_url}', encodeURI(url));
+                } else if (customScheme.indexOf('${furl}') !== -1) {
+                    externalUrl = customScheme.replace('${furl}', url);
+                } else {
+                    // Просто добавляем URL в конец
+                    externalUrl = customScheme + encodedUrl;
+                }
             }
-        }
 
-        if (externalUrl) {
-            console.log('[macOS Players Plugin] Opening URL:', externalUrl);
-            
-            // Показываем рекламу если нужно
-            if (data.vast_url && Lampa.Preroll) {
-                Lampa.Preroll.show(data, function() {
+            if (externalUrl) {
+                console.log('[macOS Players Plugin] Opening URL:', externalUrl);
+                
+                try {
                     window.location.assign(externalUrl);
-                });
+                    Lampa.Noty.show('Opening in ' + playerType);
+                } catch (e) {
+                    console.error('[macOS Players Plugin] Failed to open external player:', e);
+                    Lampa.Noty.show('Failed to open player');
+                }
             } else {
-                window.location.assign(externalUrl);
+                console.error('[macOS Players Plugin] Failed to generate external URL');
+                Lampa.Noty.show('Failed to launch player');
             }
-            
-            // Отправляем событие о внешнем плеере
-            if (Lampa.Player.listener) {
-                Lampa.Player.listener.send('external', data);
-            }
-        } else {
-            console.error('[macOS Players Plugin] Failed to generate external URL');
-            Lampa.Noty.show('Failed to launch player');
         }
+
+        console.log('[macOS Players Plugin] Initialized successfully');
     }
 
-    // Запуск при загрузке Lampa
-    if (window.Lampa) {
-        init();
+    // Запускаем плагин когда Lampa готова
+    if (window.appready) {
+        startPlugin();
     } else {
-        window.addEventListener('app:ready', init);
+        Lampa.Listener.follow('app', function (event) {
+            if (event.type === 'ready') {
+                startPlugin();
+            }
+        });
     }
-
-    // Экспорт манифеста
-    if (window.lampa_plugin_manifest) {
-        window.lampa_plugin_manifest[manifest.id] = manifest;
-    }
-
 })();
